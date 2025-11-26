@@ -1,0 +1,1217 @@
+---
+title: "R Notebook"
+author: "Shaikh, Saoud"
+date: "Spring 2025"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true 
+    df_print: paged
+subtitle: DA5030
+---
+
+# 1 / Business Understanding
+
+Customer retention may often be a very important factor for Telecommunication companies, knowing if a customer is likely to stay with the company or not is a very valuable factor that may dramatically affect company profits and revenue.
+
+The phrase "Customer is King" may be often thrown around very often. A better variation of this would be "Customer experience is king". For this project, I want to investigate how different factors of customer experience can be used to predict churn in telecom companies.
+
+I want to use previous data to assist a hypothetical telecom company's marketing team predict if they will retain a customer or not (Churn) using different demographic factors such as age, their usage of telecom plans, and different indicators of user experience such as how active a customer is, their frequency of use...etc.
+
+In the future, this could possibly be used to create a customer flagging system to help identify customers they are at the risk of losing and direct their customer service team accordingly.
+
+Of course I'd have to use CRISP-DM, but the framework can be a bit rigid at times. One question I was considering is that when I'm exploring data I may find information that I may want to immediately act on, such as missing values or outlier imputation. Instead, when I'm following this framework I might have to note down any data quality issues in the data understanding section, then act on them in the Data preparation section.
+
+### I have 4 main goals for this project
+
+-   Build and evaluate a deployable ensemble classification model to predict customer churn, this is the biggest priority. My models will be based on KNN, Logistic Regression, and Random Forest
+
+-   If the model does not deploy well, I want to understand what went wrong and identify areas of improvement.
+
+-   I want to deepen my understanding of classification techniques in the context of machine learning.
+
+### Workflow
+
+# 2 / Data Understanding
+
+I will be working with the "Iranian Churn" dataset.
+
+Want to know more about the dataset? You can find it at the UCI machine learning repository. Refer to [7 / References] for more information.
+
+### Data loading
+
+For a reproducible workflow, it may be best to have a reliable URL that can be accessed by anyone. One workaround is to upload a file on google drive and share it from there. My concern is that this method can be a bit error prone, and I don't find google drive file hosting reliable. My solution? I opted to use a public github repo with a raw file that would be easy and straightforward to load.
+
+```{r read.csv}
+# This URL MUST stay online! 
+gitURL <- "https://raw.githubusercontent.com/shaikhprograms/neus25mlhosting/refs/heads/main/Customer%20Churn.csv"
+
+df <- read.csv(gitURL, header = TRUE)
+```
+
+Did our data load properly using the above commands? Let's check
+
+```{r head_df, echo=FALSE}
+head(df) 
+```
+
+It did! We're all set, now we need to work on further exploring our dataset and gaining a better understanding of it.
+
+### Has this dataset been analyzed before?
+
+Yes, but not in the context of classification modelling, a previous analysis of the dataset's structure by Jeffery Uzoukwu (Uzoukwu, 2024) that I initially missed exists. For transparency's sake I could talk about what he did differently. His analysis was in the context of bringing out business insights, and focused on analyzing trends between each feature and the churn rate.
+
+Some of our analysis may overlap, such as his glance over the data structure, with simple factors such as the data histograms and summary statistics, missing values...etc. also being similar.
+
+Our data analysis WILL diverge though, My analysis differs in terms of the motive.
+
+My project is a modelling one, thus the insights I need from the data are different. For example, his histogram analysis is rudimentary, while I would need to analyze the data's very shape and structure in context of the algorithms that I'm working with.
+
+I would need to better understand the data's distribution, analyze normality for example and what it means for my algorithms. My analysis would be done in context to the three different machine learning models I'm working with to determine what data shaping I have to perform, and follow a CRISP-DM approach instead.
+
+### Data Quality
+
+Let's examine the dataset. Do understand that the iranian churn dataset is best examined in context of the data key provided with the dataset.
+
+Why? Because the data's structure doesn't make ordinal and binary variables immediately clear at first glance in R. More on this later. I extracted this key from UCI machine learning repository and rewrote it so that it would be easier to understand how the data is structured.
+
+```         
+#### Numerics 
+Call Failures: number of call failures
+Subscription Length: total months of subscription
+Seconds of Use: total seconds of calls
+Frequency of use: total number of calls
+Frequency of SMS: total number of text messages
+Distinct Called Numbers: total number of distinct phone calls 
+Customer Value: Arbitrary metric that shows the calculated value of a customer.
+
+#### Binaries
+Complains: binary (0: No complaint, 1: complaint)
+Tariff Plan: binary (1: Pay as you go, 2: contractual)
+Status: binary(1: active, 2: non-active)
+
+#### Ordinals 
+Age Group: ordinal attribute (1: younger age, 5: older age)
+Charge Amount: Ordinal attribute (0: lowest amount, 9: highest amount)
+Age: How old the customer is, it's not mentioned in the original key, I had to add it here. (15:youngest, 55: oldest)
+
+#### Our Target
+Churn: binary (1: churn, 0: non-churn) - Class label
+
+(UCI Machine Learning Repository, 2020)
+```
+
+```{r data.structure, echo=FALSE}
+str(df)
+```
+
+Interesting! We don't have any explicitly categorical variables here in this case. Instead, categoricals are ordinally encoded. This makes the dataset a good choice for KNN. With only 13 variables, the dataset isn't highly dimensional. I anticipate that we might have to come up with a derived feature though.
+
+I just want to be sure about the classes though.
+
+```{r df, echo=FALSE}
+sapply(df,class)
+```
+
+As expected. Notice the overwhelming presence of numeric and integer fields, The automatic inspection above would not actually what the previous data key mentioned. Our data key and actual inspection of our data according to this key is the best way to proceed. Anyways, 3150 rows of observations seems like a fairly appropriate length of data for our modelling efforts, and our dataset loads fairly fast in terms of performance.
+
+Let's take a quick look at the distribution of our data.
+
+```{r summary_data, echo=FALSE}
+summary(df)
+```
+
+#### Class Balance
+
+Before we do anything, I want to analyze my Class balance, this is important because an imbalanced class could cause problems with bias towards a specific class variable if it's overrepresented in my dataset.
+
+```{r class_balance, echo=FALSE, warning=FALSE}
+library(ggplot2)
+
+# Function: Given any column, plot its distribution.
+gg.quickplot <- function(feature, dataf)
+{
+  ggplot(data = dataf, aes_string(x = feature)) +
+  geom_bar() +
+  theme_classic() 
+}
+
+gg.quickplot(factor(df$Churn), df)
+```
+
+This is...unfortunate. Notice what's wrong? The negative class, in this case 0, is overrepresented. This will create bias which I anticipate I'll have to fix. One possible technique I could use is SMOTE. More on that soon in the Data preparation section.
+
+I anticipate that KNN and Random Forest would struggle with this class balance due to bias. This wouldn't make them a bad choice for the dataset though! Tuning the k parameter could also be another solution to optimize our model too.
+
+What about the other columns?
+
+Let's go through a two pronged approach, first we analyze the categorical variables to see if they're well distributed or not. This could affect our application of min-max normalization on ordinal variables.
+
+#### Categoricals - Ordinal
+
+Let's analyze the distribution of ordinal variables first. One important point with my approach to this dataset is that I'm relying on my dataset key to understand variables as I work with them.
+
+```{r ordinal_analysis, echo=FALSE}
+cat("Age group")
+table(df$Age.Group)
+
+cat("\n")
+
+cat("Charge Amount")
+table(df$Charge..Amount)
+
+cat("\n")
+
+cat("Status")
+table(df$Status)
+```
+
+Ah, we have an issue here. Both of these ordinal variables are on different scales. This spells out issues for KNN, but we understand that min-max normalization can solve this issue. Both ordinal values have a fair amount of variance, so we shouldn't remove them yet. One consideration with KNN is that these ordinal variables would be treated as continuous. I would rather NOT one hot encode these variables as that would affect model performance, min max normalization seems like the way to go. There's something Interesting I noticed about the data distribution for charge amount. As you increase how much customers are charged, the actual amount of customers decreases. I wonder how this would look like on a plot.
+
+```{r quickplot_charge}
+# See? I knew the quickplot function would come in handy. 
+cat("Plot for Charge amount frequency")
+gg.quickplot(factor(df$Charge..Amount), df)
+```
+
+Notice the trend? Most customers prefer low-cost or free plans, as the charge increases so do the amount of customers. I theorize that customers that pay higher will also get a more premium service, which would lead to less churn. Let's go forward with analyzing binary variables.
+
+#### Categoricals - Binaries
+
+Let's analyze the distribution of binary variables.
+
+```{r binary_analysis, echo=FALSE}
+cat("Tariff Plan")
+table(df$Tariff.Plan)
+
+cat("\n")
+
+cat("Charge Amount")
+table(df$Complains)
+
+```
+
+Notice something? We have a different scale for these two variables. The good news is that I have a solution for this. In this form, when Tariff Plan are 1 and 2, I could shift them so that they're encoded in a similar manner to Charge amount, subtracting 1 from them would effectively work in a similar way to min max normalization actually. So I anticipate both columns would end up having values of 1 and 0.
+
+Of course, to follow CRISP DM I'd rather make all the necessary changes and preparations in [3 / Data Preparation].
+
+#### Missing values
+
+Do we have any missing values? Let's check. Of course, the original dataset doesn't have any missing values, but it doesn't hurt to confirm.
+
+```{r id_missingvals, echo=FALSE}
+na_list <- colSums(is.na(df))
+na_list
+```
+
+No missing values. I could have introduced missing values to compare how introducing them affects our models, but I decided against it due to time constraints.
+
+#### Outlier identification
+
+Identifying outliers is especially important because of the three algorithms that we're working with, KNN is the most sensitive to outliers. Logistic regression too, to a certain extent. Random forest is a bit more robust but it wouldn't hurt to deal with outliers for all three algorithms and datasets.
+
+Usually I use the z-score method because I find it to be the most reliable, we can use a threshold of about 3.0 as usual. One topic I want to investigate further in the future is how changing the z score threshold for outlier analysis would affect our models.
+
+As with my previous work, we specify numerics first. I'll use this for reference. All other fields are technically categoricals. Let's use an old favorite function of mines to check outliers.
+
+```         
+#### Numerics 
+Call Failures: number of call failures
+Subscription Length: total months of subscription
+Seconds of Use: total seconds of calls
+Frequency of use: total number of calls
+Frequency of SMS: total number of text messages
+Distinct Called Numbers: total number of distinct phone calls 
+```
+
+```{r id_outlier}
+# Creating a vector of names which I can iterate through to find outliers. 
+df.nums <- c("Call..Failure", "Subscription..Length", "Seconds.of.Use", "Frequency.of.use", "Frequency.of.SMS", "Distinct.Called.Numbers")
+
+outlier.check <- function(x){
+ m <- mean(x, na.rm = TRUE)
+ s <- sd(x, na.rm = TRUE)
+ 
+z.score <- abs((x - m) /  s)
+ 
+ outlier <- which(z.score > 3.0)
+ 
+ return(length(outlier))
+}
+
+apply(df[,df.nums], 2, outlier.check)
+```
+
+Interesting, notice the sheer scale of outliers? Seconds of use has the fewest outliers while Frequency of SMS has the greatest.
+
+I wanted to analyze Frequency of SMS on a boxplot just to understand this distribution better and how it relates to z score outliers for example. We recall that R's base boxplots use IQR as their outlier criteria.
+
+```{r box_outlier, echo=FALSE}
+sms.box <- boxplot(df$Frequency.of.SMS)
+cat(paste0("using IQR, outliers for the SMS freq are ", length(sms.box$out)))
+```
+
+Interesting, notice how the IQR method gives us a larger scale of outliers? In this scale I believe R's plot uses 1.5 IQR above or below as our threshold.
+
+#### Correlation analysis
+
+Remember, KNN is non-parametric so we're not necessarily normalizing things for KNN. It's more that we're changing the scale. Our logistic regression algorithm does NOT assume normality, but of course as I've said before if our continuous data does not follow a similar distribution then normalizing our data would be required. Let's take a peek at what our continuous features look like.
+
+Let's analyze our data set for multicollinearity to simplify our data set.
+
+```{r corr_analysis, echo=FALSE}
+cor(df)
+```
+
+#### Outcomes from correlation Analysis
+
+Here's the beauty of correlation analysis. I believe that it gives you an idea of the shape of your dataset and uncover relationships in a way that you normally wouldn't, there's so much information I managed to mine from the correlation analysis. What do we notice in this case?
+
+-   In a context such as this, all of our predictors are NOT independent. Even the predictors that do not show high colinearity do show at least some correlation between each other. This is to be expected of course, since our data is very interconnected.
+
+-   Seconds of use is highly correlated with frequency of use(\>0.90), they're fairly similar features. No particular explanation would help so we could remove the feature with the least variance.
+
+-   frequency of SMS is colinear with customer value. In this case it may be better to remove customer value, because it's an arbitrary feature without much explanation to it. What drives customer value? Nobody knows. From the data key: "The calculated value of customer". If we had the formula for this calculation the feature could've been useful but a lack of explainability compared to frequency of SMS makes this a candidate for removal.
+
+-   We realized why, in terms of data quality data keys can be unreliable. The variable "Age" was multicollinear with Age Group (\>0.90) . Nowhere in the actual key or variable information for our dataset was "Age" mentioned, and I would have missed it if it were not for multicollinearity analysis. The lesson? Don't take data information for granted, always analyze thoroughly!
+
+```{r age_analysis, echo=FALSE}
+cat("Age")
+table(df$Age)
+
+cat("\n")
+
+cat("Age group")
+table(df$Age.Group)
+```
+
+This could either be an error by the data creator or just a way for them to keep track of the Age column, therefore Age group must be removed.
+
+-   There are two predictors that have the highest correlation with Churn. These are Status() and Complains.
+
+Every bit of insight that we get here is important for the Data Preparation step of course because it guides our analysis.
+
+#### Data Distribution analysis (Histograms)
+
+Histograms are an important tool for analyzing numeric fields. You'll notice that I left the histogram analysis for numeric columns for the end of our Data analysis section, this is because of the slightly different context I wanted to use pairs.panels in. Usually we would use it to analyze correlation, but that would slow our data processing down and that function becomes somewhat of a mess when you analyze everything at once.
+
+You'll notice we already analyzed most of the discrete(non-continuous) columns for correlation, so we can use pairs.panels to lower the load on the pairs.panels function when it loads histograms for our data. Why pairs.panels? Well, if we used a histogram for each column manually then it would take up a lot of processing when we knit our file! We're not really interested with how these features correlate with churn anymore because we've already analyzed correlations and addressed colinearity.
+
+```{r hist.plot, echo=FALSE}
+library(psych)
+
+df.nums <- c("Call..Failure", "Subscription..Length", "Seconds.of.Use", "Frequency.of.use", "Frequency.of.SMS", "Distinct.Called.Numbers", "Customer.Value")
+
+pairs.panels(df[,df.nums])
+```
+
+This shows some interesting trends for our numeric fields. Namely, subscription length is much closer to a normal distribution compared to the other numeric columns. Furthermore, I feel more justified in using KNN for our dataset now that I notice that the numeric columns have a somewhat similar skew or distribution except for subscription length, of course not too similar but it's slightly noticeable. Then again, I recall that min-max normalization will keep our data on a similar scale anyways.
+
+I also anticipate that for logistic regression, expect our data set to at least have a reasonably normal distribution. When we finish most of our modelling steps, I'd prefer to keep our data normalized.
+
+Now to move on to data preparation. 
+
+# 3 / Data Preparation
+
+For my data preparation workflow, While some steps such as SMOTE and derived features are best performed with the common dataset, the later part of our analysis such as min-max normalization would be better done with KNN separately.
+
+While I tend to be fairly detailed, if you want any context for my transformations feel free to check my data quality analysis in [2 / Data Understanding], which helped me derive the transformations I need for my data.
+
+### Planning - Should I perform different transformations for each dataset? 
+
+This is what I want to address before. The question I'm asking throughout Data preparation is "Is it fair to compare our algorithms if they will have different transformations performed to them?".
+
+I just had the realization that the data preparation step could be compared to designing a pipeline for our data to go through. That means I have to think deeply about how I structure my pipeline. For example a question I'd ask would be is my data analysis pipeline fairly linear? Or Is it a set of strictly parallel pipelines that uses very separate methods for each algorithm? Or is it a tree, which starts with a trunk of common transformations and branches into different methods for each algorithm?
+
+I opted to design my pipeline as a tree when I have limited time, the best of both worlds.
+
+### Data transformation - pipeline design
+
+You can observe the following framework to understand how I planned my data processing steps. For imputation, usually mode or median imputation will be used depending on the nature of our dataset for outliers.
+
+The following block will help guide my decision making for data prep, think of a tree, with the **Trunk** being the common data processing steps shared by all datasets, and **branches** showing how I tailored specific datasets towards each algorithm.
+
+```         
+#### Tree trunk(Common shaping steps) 
+
+- Oversampling: All my algorithms are sensitive to class imbalance, we can tackle this first. Perhaps there's a chance it may introduce outliers? So follow up with Outlier imputation.   
+
+- Feature selection: We'll remove any colinear variables. While random forest wouldn't have too many problems, I'd prefer to stay on the safe side with removing redundant features for model performance. Even KNN doesn't have too many problems with collinearity, it's just logistic regression. BUT KNN prefers low dimensionality. Wouldn't that mean removing redundant features is a win-win situation for KNN and logistic regression?  
+
+- Outlier imputation: It's a fair compromise that outlier imputation will be shared across algorithms. Random forest is for the most part robust to outliers but logistic regression and KNN are not. Using this logic, it might just be better to impute outliers for all my datasets the same way.
+
+
+#### Branches (Specific to each algorithm)
+
+----> KNN: 
+      - Derived features: will be numeric to account for distance calculations in KNN
+      - Transformation: Min-max normalization helps keep all data on the same scale. 
+      n  
+----> Logistic Regression 
+     - Derived features: Categorical, I wanted to investigate how a factor encoded variable can be implicitly one-hot encoded by the glm() function.
+      - normalization: We'll have to normalize our continuous features. 
+      - I'll attempt to keep categorical variables as factors
+      
+----> Random forest
+      - Encode categorical variables as factors: I anticipate this will help with ensuring a proper split for my Random forest algorithm
+      - Derived feature: Categorical, I've noticed that random forest and by extension decision trees prefer factor encoded variables, let's keep them as categoricals. 
+```
+
+### Justifying my pipeline design
+
+Is the tree structure of data shaping suboptimal? Well it goes against the logic of treating data preparation as a "tuning parameter" for each algorithm where you radically shape your data towards the needs of each algorithm. If I had a few weeks more, I would've reflected for example on using different methods of imputation tailored towards each dataset.
+
+But it's also the best of both worlds to me, letting me properly come forth with a deliverable that works without errors while tailoring some steps towards algorithms. The "tree" approach helps me work fast by simplifying initial steps and moving into more complex transformations near the end, while also tailoring my datasets towards algorithms.
+
+I'll decide to use different derived features for each model to tailor them towards. For example random forest and logistic regression would be able to handle categorical features well. KNN...not so much.
+
+### Common Data preparation - The Tree Trunk
+
+Let's start our data preparation by asking "which transformations will be common across each algorithm"? The answer to questions like these is already in the framework I've written above.
+
+First, to solve our class balance let's begin with SMOTE
+
+#### Solving class imbalance
+
+What technique is justified here? You'll notice in my previous Data Analysis that we have an imbalanced class, it's already been plotted but you can see it here too without the plot.
+
+```{r class.table, echo=FALSE}
+table(df$Churn)
+```
+
+To solve this problem, I'd oversample the minority class. I understood that it uses an algorithm similar to KNN to find the nearest neighbors in a minority class and create a new synthetic data point.
+
+In my case I was going to use a package implementation of smote from smotefamily. I figured that keeping the target a factor will help with the actual modelling functions we'll use too, our target has to be a factor anyways when using smotefamily's SMOTE() function.
+
+There is a bit of an ethical concern over oversampling in a real life context, because of the implications of using synthetic data. Honestly it's better disclosed the same way one would disclose outlier alterations in a dataset. You're also inflating the size of your dataset which is something to consider.
+
+A technique like SMOTE or oversampling my data is where I find the idea of data preparation as a tuning parameter to be valid, there are so many aspects of your technique you can tune or adjust for your model, right? I digress, let's go back to our code.
+
+I initially tried SMOTE with a dup_size of 4, but that made 0, the negative class the majority class. Something tells me that altering the structure of the data like that doesn't feel intuitive, so I used a dup_size of 3 instead.
+
+I spent a really long time trying to work with the smotefamily package, and spent hours trying to troubleshoot my data, then realized that no, SMOTE is not the best option for my dataset. The interpolation component of SMOTE lead to a lot of annoying troubleshooting with categorical variables that lead to nowhere.
+
+Instead I used the ROSE library to oversample my data and duplicate it at random to achieve class balance. My dataset was renamed dfs because that was the variable I used initially after SMOTE duplication, but had to change my technique to random oversampling instead to deal with categoricals.
+
+```{r ROSE_preparation}
+library(ROSE)
+
+table(df$Churn)
+
+Oversampling<- ovun.sample(Churn ~ ., data = df, method = "over")
+
+dfs <- Oversampling$data
+
+table(dfs$Churn)
+```
+
+#### A reflection on my class imbalance approach
+
+I also want to talk about the dilemma about the "path not taken", and what happens when you ponder about what could've been done. In this case, I'm thinking about what my models would have been like if I had used SMOTE to interpolate and generate synthetic data instead. Sure, one problem with SMOTE is that the KNN-based interpolation method it uses would generate synthetic data that doesn't exist, but is that a bad thing? Wouldn't it help me future-proof my dataset by helping me predict future values?
+
+take the case of Age for example.
+
+```{r age_df}
+table(dfs$Age)
+```
+
+The original dataset does confuse me a bit on data quality, because why do we have such a limited set of ages? Between age and age group, would age group have been a more flexible approach to data? Didn't the creator anticipate that people from other ages also may be telecom company customers? I think that they used this as a generalization, and we could've created a derived feature to use both age and age group to split ages into something that's more representative of the average population.
+
+Why do I mention this? Well, after I got a bit frustrated and used an alternate approach compared to SMOTE which I originally intended to work with, I thought that SMOTE would've improved the quality of the dataset by "smoothing" the age variable for example.
+
+If new customers come in that we have to predict they're not going to just be 15, or 25 or 30. They could be 18, or 23, different demographics may have different tastes. For example the average 15 year old is in high school while the average 25 year old is in the workforce, what about everyone in between, college students? There is a flaw which is apparent in how this dataset handles age data and generalizes values.
+
+#### Remove colinear/unnecessary features
+
+We have about 3 features that we need to remove according to our colinearity analysis. But we'd have to think smartly about how we proceed with removing them according to the data insights that I got. Let's revise what I have to do. I like to do quick check-ins like these when I'm working because it helps me make sure my data understanding and logic are consistent with my data shaping.
+
+```         
+FOR MORE CONTEXT SEE DATA UNDERSTANDING ----> DATA QUALITY ----> OUTCOMES FROM CORRELATION ANALYSIS
+
+# Remember, we have to decide based on variance between Seconds of use and Frequency of Use 
+
+# We remove the Customer value metric after our analysis, because of its lack of explainability as a metric and colinearity with frequency of SMS
+
+# We remove the Age group metric because of its redundancy, and lack of explainability compared to Age group 
+```
+
+Nice! Let's take action according to these guidelines I made.
+
+First, let's analyze the variance difference between seconds of use and frequency of use to decide which to eliminate
+
+```{r var.elimination}
+
+cat("VARIANCE ANALYSIS")
+cat("\n")
+
+cat("seconds of use")
+cat("\n")
+
+var(dfs$Seconds.of.Use)
+
+cat("\n")
+
+cat("frequency of use")
+cat("\n")
+
+var(dfs$Frequency.of.use)
+```
+
+This marks frequency of use for elimination because of its low variability, so our final columns to be removed are:
+
+-   frequency of use
+-   Customer value
+-   Age group
+
+Let's take action.
+
+```{r remove_colinears, warning=FALSE}
+library(dplyr)
+dfs <- dfs %>%
+  select(-c(Frequency.of.use, Customer.Value, Age.Group))
+
+str(dfs)
+```
+
+We have a far simpler dataset to work with now. Good news!
+
+#### Impute outliers
+
+Outlier imputation will be fairly straightforward. We recall that we've already identified outliers using the z score method, where we consider any values outside a z score threshold of 3.0 as outliers. Now we simply need to replace or impute them. We could even use the trimmed mean actually.
+
+```{r outlier_imputation}
+# Create a single column function for median/mode imputation. 
+outlier.impute <- function(x, technique) {
+  z.table <- scale(x) 
+  o <- which(z.table > 3.0)
+  
+  if (length(x[o]) == 0) return(x)
+  
+  
+  if (technique == "median") {
+    x[o] <- median(x, na.rm = TRUE)
+  } else if (technique == "mode") {
+    x.mode <- as.numeric(names(sort(table(x), decreasing = TRUE))[1])
+    x[o] <- x.mode
+  }
+  
+  return(x)
+}
+
+# I already have my numeric values
+ df.nums <- c("Call..Failure", "Subscription..Length", "Seconds.of.Use", "Frequency.of.SMS", "Distinct.Called.Numbers") 
+ 
+dfs[,df.nums] <- sapply(dfs[,df.nums], function(x) outlier.impute(x,"median"))
+```
+
+
+Now we need to branch our dataset out according to each algorithm to shape the data in a way that aligns with each algorithm.
+
+### Branching - Algorithm-tailored transformations.
+
+I believe that KNN would diverge a fair bit from the rest of the algorithms for transformations such as adding a numeric derived feature and using min-max normalization.
+
+For logistic regression, I want my variables to be one hot encoded by hand so that we end up with a cleaner, more explicit dataset compared to the KNN approach which keeps encoding as-is for the most part.
+
+The Random forest approach will involve a more thorough use of factor encoding, since this algorithm works best with factor features for any categorical values. More explanation will follow when I perform each step.
+
+Note that the resulting output of our transformations will lead to a differently tailored dataset for EACH ALGORITHM.
+
+Of course, a small detail I shouldn't miss. I'm going to keep the final target variable to be Churn instead of what it changed to after SMOTE.
+
+```{r renaming.target}
+names(dfs)[11] <- "Churn" 
+```
+
+#### Divergent derived feature: Customer Satisfaction
+
+Now I'll introduce customer satisfaction, which will be encoded very differently between each algorithm.
+
+Between logistic regression and Random forest, I expect to create a non-numeric categorical derived feature which this dataset lacks for logistic regression. It's just that the way I do this will differ between Random Forest and logistic regression. To simplify things a bit, the derived feature I want to work with is customer satisfaction.
+
+I can brainstorm further how this metric is derived, but in the case of KNN it can be tailored to be numeric, while for other algorithms it can be factor-encoded for Random forest or one-hot encoded as a categorical for logistic regression. One added benefit is that Customer Satisfaction can be a good replacement for the previously calculated Customer Value metric which had no explanation before.
+
+I'd rather analyze our positive metrics and our negative metrics to determine their weights for our calculation. In this case it would be calculated the same way a professor calculates a grade, we'll take a weighted calculation using the good metrics, their ranges, and how they correlate with churn. Then, we can apply a penalty based on the negative metrics. Please observe the following blocks
+
+```         
+### Positive Metrics: These indicate customer loyalty 
+- Subscription length, continuous
+- Seconds of use, continuous
+- Frequency of SMS, continuous
+- Distinct called numbers: continuous
+
+### Negative metrics: These indicate problems that a customer could be facing. 
+- Complains: Binary, 1 or 0
+- Call failures, continuous
+```
+
+```{r derived_analysis}
+
+dfs_positives <- c("Subscription..Length", "Seconds.of.Use", "Frequency.of.SMS", "Distinct.Called.Numbers", "Churn")
+
+pairs.panels(dfs[,dfs_positives],)
+```
+
+We could associate a higher weight to features that have a higher correlation with churn, for example higher seconds of use seems to definitely impact customer loyalty the most. We'll do a quick and dirty ranking by hand just to get a quick idea of which value affects our churn the most. If I had more time I would've delved deeply into creating a derived feature like this.
+
+Distinct Called Numbers \> Frequency of SMS \> Seconds of Use \> Subscription Length
+
+Where the first three are clustered pretty closely in terms of correlation, so our final weights would be:
+
+```         
+satisfaction = 0.35 * Distinct + 0.30 * SMS + 0.25 * Seconds of Use
+```
+
+But we also need to figure out a penalty based on call failure. I'm gonna be honest, complexity can creep in when I'm making a derived feature so I don't want to suffer at the cost of other parts of the project just to make a derived feature so I can't expect a 100% accurate estimate.
+
+In this case, we'll design a high penalty of 0.3 \* call failure if complaints are present, and a low penalty of 0.05 \* call failure if complants aren't present, this will be subtracted from our original calculation.
+
+We can take all of this together and create our own calculation from this, first we create a vector using the calculation, apply a penalty, then we'll add the vector to our dataframes and tailor them each according to our algorithm later. We go on to use functions more and more now that we have to apply each of our transformations to a specific dataset.
+
+```{r derived_feature}
+get.satisfaction <- function(df){
+Customer.Satisfaction = 0.35 * df$Distinct.Called.Numbers + 0.30 * df$Frequency.of.SMS + 0.25 * df$Seconds.of.Use + 0.1 # 0.1 added to ensure no values are completely zero
+
+# We can divide our variable by call failure
+penalty <- ifelse(df$Complains == 0,
+                  df$Call..Failure * 0.3,
+                  df$Call..Failure * 0.05)
+
+Customer.Satisfaction <- Customer.Satisfaction - penalty
+
+df$Customer.Satisfaction <- Customer.Satisfaction
+
+return(df)
+}
+
+dfs <- get.satisfaction(dfs)
+```
+
+Nice! We've finally developed our feature. We can tailor our feature as needed when we tailor each dataset towards algorithms. For example, if our derived feature goes through min-max normalization in KNN, we can then treat the feature as a percentage, which can then be binned for logistic regression and random forest.
+
+### KNN Transformations
+
+For KNN, my approach involves mostly retaining the encoding of the dataset as-is in contrast to other algorithms because I expect that within the timeline I have now, this would be the best way to deal with my data.
+
+#### Data partitions
+
+Let's organize the data we'll be using in our algorithms here.
+
+```{r}
+dfs.knn <- dfs
+```
+
+#### Min-max normalization
+
+will still min max normalize our data of course to keep all of our data on the same scale, this will also help make dealing with our derived feature much easier. This can apply to ALL variables in our function.
+
+```{r}
+min_max <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+dfs.knn[,-11] <- sapply(dfs.knn[,-11], function(x) min_max(x))
+```
+
+We now have our data properly prepared for KNN. One benefit of minmaxing is that our customer satisfaction metric also gets normalized into a form that can also be binned for other algorithms, let's observe the min-max derived feature's distribution to see if we could bin it into a categorical feature.
+
+```{r hist_derived.bin}
+hist(dfs.knn$Customer.Satisfaction)
+```
+
+Looks like these customers really aren't satisfied, huh? This feature looks like it can be easily binned, we'll address this in Random Forest which works best with binned variables.
+
+### Logistic Regression
+
+For logistic regression, I've decided that keeping most of our variables as-is would be fine because complains, tariff plan and status are just binary variables. Charge amount can basically be treated as continuous for logistic regression, while Age is the only variable I took care to encode later on as a categorical factor to be managed by glm() for implicit one-hot encoding. Let's create datasets as per our need.
+
+Our derived feature, customer satisfaction as a decimal from 0 to 1 was carried forward from the KNN algorithm because of its usefulness, it will be useful for further tailoring a derived feature for random forest later.
+
+```{r data_introduction}
+dfs.logi <- dfs
+```
+
+We keep our derived feature from the KNN algorithm, which proves to bea useful metric.
+
+```{r logistic_derived}
+# keep our derived feature, minmaxed before
+dfs.logi$Customer.Satisfaction <- dfs.knn$Customer.Satisfaction
+
+df.nums <- c(df.nums, "Customer.Satisfaction")
+```
+
+Why did I use the minmaxed version of Customer.Satisfaction? I feel that it helps working with a metric from 0 to 1 because it's a more interpretable metric compared to our original formula.
+
+#### Encoding Age for logistic regression
+
+I want to delve deeper with Age as a factor variable for logistic regression. I can't have too many categoricals for logistic regression because of overfitting so of course this is the only categorical variable I need to one hot encode, we know that complains, tariff plan, status are binary which are satisfactory to logistic regression's needs. Charge amount won't have any problems as a numeric variable.
+
+I realized midway through my workflow that both Random forest and logistic regression have VERY DIFFERENT NEEDS in terms of data which I needed to manage. My original plan was to have a binned categorical variable for logistic regression and Random Forest, but I decided to stick with a continuous derived feature for logistic regression.
+
+A small tweak though. I want to change age to a factor so it isn't treated as ordered and is a factor instead for the algorithm to handle. The only thing is that increases dimensionality, but I want to keep a bit of a compromise between how I want age to be treated and dimensionality, of course we only have one true categorical variable in that case for logistic regression to handle.
+
+```{r agefactor.logi}
+dfs.logi$Age <- factor(dfs.logi$Age) 
+```
+
+#### Analysis to guide my normalization step
+
+The final step involves normalizing any numeric variables for logistic regression. This is justified because of the overall pattern of skew that we've seen in our dataset as we've worked with it for numeric values. Decisions like these are a little bit more ambiguous when you work with the dataset that I have, because remember what I said about charge amount? Because I want to focus strictly on my own defi\\74.ition of what I've assigned my numerics to be, charge amount won't be normalized because of its non-continuous nature, neither will age for example because of it's discrete nature. I'll do another analysis on my numerics because I want to consider HOW I want to normalize my variables.
+
+```{r logistic_num.analysis}
+pairs.panels(dfs.logi[,df.nums])
+```
+
+Let's apply a log transform and see what happens. I don't want to transform subscription length because it's close to normality and further transformations would ruin it.
+
+```{r log_transform}
+df.num_log <- df.nums
+
+# Remove Subscription length from normalization
+df.num_log <- df.nums[-2]
+
+dfs.logi_test <- dfs.logi
+
+dfs.logi_test[,df.num_log] <- lapply(dfs.logi[,df.num_log], function(x) sqrt(x + 0.001))
+pairs.panels(dfs.logi_test[,df.num_log])
+```
+
+Originally, I had tried this method with a log() transform which introduced colinearities into the data, I did not find that appropriate for the data that we're working with. You can see here for yourself:
+
+```{r log_transform.results}
+dfs.logi_test[,df.num_log] <- lapply(dfs.logi[,df.num_log], function(x) log(x + 0.001))
+pairs.panels(dfs.logi_test[,df.num_log])
+```
+
+What conclusions can we draw?
+
+Our analysis showed us that:
+
+-   We should drop the derived feature for logistic regression because of colinearity for logistic regression, unfortunately.
+
+-   A log transform isn't the solution, instead we should work with a square root transform. The square root transform does lead to SOME colinearity unfortunately, but it's more manageable.
+
+#### Final normalization step
+
+Now that we know that a square root transform is the best solution, let's implement it confidently using the insights we have.
+
+```{r sqrt_transform.logistic}
+dfs.logi[,df.nums] <- lapply(dfs.logi[,df.nums], function(x) sqrt(x + 0.001))
+```
+
+#### Dropping the derived feature.
+
+Unfortunately, we'll have to drop our derived feature because of its collinearity, it can still work for other algorithms though. In the future or a more expanded project, I would plan to try and understand how I can manage derived features to reduce colinearity. Perhaps it was how I weighed the calculation which caused the colinearity.
+
+```{r remove_derived}
+library(dplyr)
+dfs.logi <- dfs.logi %>%
+  select(-Customer.Satisfaction)
+```
+
+### Random Forest
+
+For random forest, my derived feature is likely going to be the same. I'm reflecting on the fact that if my project were a little bit more ambitious, I would've optimized my variables towards a better fit for logistic regression. In this case, random forest would work better with factors for any supposed categoricals. I use "supposed" because sometimes this dataset gives a bit of trouble deciding on whether certain variables should be categorical or numeric, it's a bit of a gray zone.
+
+Age for example has a very limited set of values, so in that case I consider it categorical for example. It's a bit of a troubling way of working with data, but I feel that it helps me optimize my variables towards random forest for example. Take what I did in logistic regression for example, why did I introduce a categorical value? I feel that my perspective is driven more by curiosity towards how a certain variable would be handled by an algorithm more than anything.
+
+Throughout my work with this dataset, I keep thinking about how I'm defining my data when it's so loosely defined in its origins. Categorical or ordinal? Sometimes I also reflect on whether the fact that there is an order to certain variables affects how my algorithms interpret them or not. If I could use one word to describe the problem with this dataset, it would be the word order. How do our algorithms interpret order? If tariff plan and status for example are values from 1 to 2 would our algorithm falsely find a sense of order where there is none? This also is a question that justifies factor encoding.
+
+Reflecting on the same question, one could ask does the order of age matter? Maybe it could be that increasing the age doesn't really affect Churn as much as the fact that each age group lives a very distinct lifestyle that affects churn in a different way. Age isn't continuous so it also is justified to be a factor.
+
+#### Introducing Random Forest dataset
+
+Random forest doesn't expect values to be normalized of course, so we'll start with all the changes to the shared dataset first, then introduce a binned value which is tailored towards random forest.
+
+```{r Random_forest.dataset}
+dfs.rf <- dfs 
+```
+
+We need to use a dependency we need for a binned feature.
+
+```{r pre_binning.rf}
+# Pre-derived feature for binning 
+dfs.rf$Customer.Satisfaction <- dfs.knn$Customer.Satisfaction
+```
+
+Next, we go through the process of creating a new binned feature for random forest. About 5 bins is a bit generous but I thought that it would capture relationships well.
+
+```{r binning.derived_rf}
+dfs.rf <- dfs.rf %>%
+  mutate(Satisfaction.bin = case_when(
+    Customer.Satisfaction <= 0.2 ~ "Dissatisfied",
+    Customer.Satisfaction <= 0.4 ~ "Poor",  
+    Customer.Satisfaction <= 0.6 ~ "Average", 
+    Customer.Satisfaction <= 0.8 ~ "Good",
+    Customer.Satisfaction <= 1   ~ "Very good",
+    TRUE                         ~ NA_character_
+  ))
+
+dfs.rf$Satisfaction.bin <- factor(dfs.rf$Satisfaction.bin, 
+                                  levels = c("Dissatisfied", "Poor", "Average", "Good", "Very good"),
+                                  ordered = TRUE)
+
+
+cat(" dataset\n")
+table(dfs.rf$Satisfaction.bin)
+```
+
+
+#### Tailoring Factor based features
+
+Why would I tailor variables in Random forest to be factors? Well, my idea comes from the fact that Random forest is ultimately an ensemble of decision trees. My logic is that using factors would ultimately lead to a better split for the random forest algorithm. As per our previous discussion, Age would seem the odd one out from our categoricals, but actually I do NOT want to treat age as ordered. For reference, this is what age looks like again.
+
+```{r rf_age.structure, echo=FALSE}
+table(dfs.rf$Age)
+```
+
+Here's a hypothesis, Random forest will perform the best out of our algorithms, because of its ensemble nature it's a great all-rounder algorithm that is flexible to the needs of both numeric and categorical data. This particularly helps when we have a dataset which is structured that way we've seen throughout the project, with that "gray zone" between variables.
+
+It's also more flexible than KNN with handling different scales better.
+
+```{r RF.cats, echo=FALSE}
+df.cats <- c("Complains", "Tariff.Plan", "Status", "Age", "Charge..Amount")
+
+
+str(dfs.rf[,df.cats])
+```
+
+Let's convert these categorical variables to factors as per our need. We understand that satisfaction_bin has already been converted into a factor.
+
+```{r factoring_rf}
+dfs.rf[, df.cats] <- lapply(dfs.rf[, df.cats], factor)
+
+str(dfs.rf)
+```
+
+Converting the categoricals to factors also makes them more interpretable as you can see above! Now it's time to move on to modelling, the difficulty of transitioning to modelling can be in terms of just how much you have to change your way of thinking when you move on to a different stage of the CRISP-DM process. You initially start thinking about your data and how it fits with your algorithms.
+
+#### Remove old derived features
+
+There was also something I forgot, if I have a binned version of Customer Satisfaction, I do not need the numeric version anymore for random forest.
+
+```{r rmv_customer.satisfaction_RF}
+dfs.rf <- dfs.rf %>%
+  select(-Customer.Satisfaction)
+```
+
+#### A reflection on Data Preparation
+
+I would like to think about where my journey has taken me. You initially start thinking about your data and how it fits with your algorithms, you think about what insights you can bring out of your data to better fit towards your algorithms If your data doesn't fit, you still think about how you can make your data fit, what transformations you can do towards your data to improve fit.
+
+Not everything works out, sometimes you don't have the knowledge for the perfect optimal solution. The truth is, the more I explored my data the more I realized that there's always more work to do in terms of fitting, more aspects to consider. Under time pressure, you often have to figure out if a specific method would be worth it in terms of complexity too.
+
+The challenge of data preparation helped me think like a data scientist, which was a wonderful skill to gain.
+
+Now we move onto modelling.
+
+# 4 / Modeling
+
+What do I anticipate modelling and evaluation to look like? I anticipate using the holdout method to finally create a fitted KNN, Random forest and logistic regression model.
+
+Since this is the point where things get messy, I want to keep our datasets in mind. One quirk of how we prepare our datasets is that if we want to deploy our model, our ensemble should be deployed by getting a majority vote out of all three of the testing datasets created. This would mean that three separate test datasets that are tailored towards the algorithm would be used for any ensemble prediction.
+
+### Personal reference: Our datasets
+
+```         
+### KNN datasets
+
+dfs.knn
+
+### RF Datasets
+
+dfs.rf
+
+### LR datasets
+
+dfs.logi
+```
+
+### Holdout method or k-fold cross validation?
+
+at this point I was deciding whether to use k-fold cross validation or whether I should use the holdout method to partition my dataset. I decided to use the holdout method instead. Why? In this case I was dealing with multiple datasets.
+
+I'll have three different training tasks that I have to work with on top of bagging and an ensemble. It's best that I work with what I know.
+
+That said, if I had more time or my project had a few days more, I think that k-fold cross validation would've been the best choice for my dataset.
+
+Why would k-fold cross validation have been the better option? Well it would have shown great metrics for my model in all aspects, before I generated synthetic data my dataset was still relatively small, k-fold cross validation could've been a great strategy for me to solve class imbalance for example by stratifying my train-test split.
+
+I'll stick with the holdout method for now though. We're basically sacrificing model performance in favor of going for an approach that I can thoroughly explain, organize and account for in the given time that I have.
+
+We recall that we are dealing with a binary classification problem, with 1 being churn and 0 being no churn. It is a slight bit unusual because in the case of our business, a 0/negative outcome, in this case churn is favorable right? We also recall that this is called a binary classification problem.
+
+Anyways, let's go. We'll be using a 70-30 split because it's a good balance for our training-test split because there's a fair amount of data for both training AND evaluation, compared to 80-20 which can get a bit narrow. I emphasize pragmatism throughout my approach to get finished in time.
+
+Of course, when I go forward into creating ensembles I would like to keep the Condorcet Jury theorem in mind, I expect that bagging our models as homogenous learners, then aggregating these bagged learners into a heterogenous vote-based approach will increase the probability that our majority vote is correct closer to 1.
+
+### A caret-heavy approach
+
+When I'm starving for time, I decided that I would emphasize using caret for any of my machine learning needs. This package makes machine learning efficient and reduces any chances for error when I'm in a hurry to finish my deliverable. I want some of the more tedious steps to be a little bit more streamlined, and I like the common shared language that it uses, it's an exciting challenge.
+
+Let's work with caret to streamline some steps. I'd prefer partioning data the old way without caret though. We remember that we'll use an 80-20 ratio, and that EACH of our models will be trained on the same dataset rows and columns.
+
+We'll also have to consider our bagging approach very soon. While we are using different datasets, I have to consider that I have a very limited amount of time.
+
+#### A quick adjustment: factor our churn variable
+
+Before we do anything, I want to factor our churn column so each algorithm we work with treats our problem as classification
+
+```{r factor_churn.final}
+dfs.knn$Churn <- factor(dfs.knn$Churn)
+dfs.rf$Churn <- factor(dfs.rf$Churn)
+dfs.logi$Churn <- factor(dfs.logi$Churn)
+```
+
+## Universal data partitioning
+
+We need to future proof our algorithms in such a way, that our ensemble(Which shows up later) would be able to handle the test/train split that we have.
+
+```{r universal_partition}
+set.seed(100)
+
+n <- nrow(dfs)
+train.ind <- sample(1:n, size=floor(0.7 * n))
+test.ind <- setdiff(1:n, train.ind)
+```
+
+### KNN
+
+#### Data partitioning
+
+Now we'll partition our data, each one following) the same pattern. First let's create partitions for KNN.
+
+```{r knn_partitioning}
+library(caret)
+
+train.knn <- dfs.knn[train.ind,]
+test.knn <- dfs.knn[test.ind,]
+```
+
+I chose a 70-30 split for the reasons outlined previously.
+
+#### Fitting KNN - Intro
+
+Now that we have a proper dataset for KNN, our next step will involve fitting the model using KNN, I want to use the caret implementation of knn to train my dataset because I want to streamline the training process, while also allowing for an easier tuning method which doesn't leave me frustrated. While tuning may have to be sacrificed at times depending on my time, I'll still keep it in mind when I can.
+
+That said, the good news is that tuning for KNN is fairly straightforward and mostly involves dealing with finding an appropriate value of K.
+
+The caret package can fortunately handle KNN parameter tuning for us. I prefer the caret implementation of KNN over the class() package implementation, mainly because it's more feature rich and user-friendly.
+
+#### Fitting KNN with the K parameter
+
+We'll use the caret package implementation to both tune our model to find an appropriate value of K and then fit our k parameter to get some predictions for the test dataset.
+
+We can use a grid search with odd values of k here. The only thing is i've seen it suggested that an odd value of k is usually preferred for binary classification, my understanding is that an even value of k could lead to a tie between two neighbors, causing the algorithms to have trouble with the class. I'd prefer to have a slightly large range of values to help caret decide an optimal value. I do wonder whether using the by=2 operator really matters, because ultimately the package itself could test to find optimal values of k.
+
+Could I have let the algorithm automatically also find a value of k instead of manually specifying a grid?
+
+```{r knn_gridsearch}
+grid.knn <- expand.grid(k = seq(3, 25, by=2))
+```
+
+let's set up the train control to find an optimal value of k. I noticed one quirk of the caret package which involves its use of k-fold cross validation as the most common method to tune parameters.
+
+When we ultimately do model comparison though, I'd rather proceed with the holdout method for evaluation in our separate model evaluation section. In traincontrol, cv for optimizing the parameter means k-fold crossvalidation, I'll use 10 folds, which might affect computational cost but it can't be too bad. It may slow down the runtime as our Rmd gets larger though.
+
+```{r knn_traincontrol}
+train_ctrl.knn <- trainControl(method = "cv", number = 10)
+```
+
+Finally, we fit our KNN model. The more I work with the caret package, the more I feel that I took the right choice by using it for this machine learning project because of its straightforward use case. It has the same sense of beauty and user friendliness you would expect from dplyr for example. The only problem with using a package implementation is that in a better world, I should EXACTLY understand how the model is tuning and what goes on under the hood as a student.
+
+```{r knn_training}
+knn.model <- train(Churn ~.,
+                   data = train.knn, 
+                   method = "knn",
+                   trControl=train_ctrl.knn
+                   )
+```
+
+Next, we should plot the K parameter to get a look at what the process looks like, and get an idea of what the optimal value of k looks like.
+
+```{r k.optimized, echo=FALSE}
+print(paste0("The best value of k is ", knn.model$bestTune ))
+
+plot(knn.model)
+```
+
+Interesting, notice the linear relationship between the number of neighbors and Accuracy? Also I finally got the answer to how exactly caret tunes its parameters for classification at least, our case here shows that cross validation of the accuracy parameter is how caret tunes its value of k, I wonder if the case is the same for other models. It's best to keep any evaluation of our models in the 5/ Evaluation section to keep things neat and tidy.
+
+Let's test how our knn learner predicts
+
+```{r prediction_knn}
+knn.prediction <- predict(knn.model, newdata = test.knn)
+```
+
+### Logistic Regression
+
+#### Partitioning dataset
+
+Now, we partition the dataset the same way we did with KNN. You would notice that I'm using the same seed for each model right? I feel that this is valid because my holdout method fundamentally assumes that each model will draw from the same dataset in the same way. If we were to work with bagging for example, that's when I'd prefer a more random method of sampling.
+
+```{r partition_data.lr}
+train.logi <- dfs.logi[train.ind,]
+test.logi <- dfs.logi[test.ind,]
+```
+
+Now that we've properly partitioned out dataset, let's proceed with fitting our model. In this case using the glm() function instead of caret won't be much of a problem.
+
+#### Fitting model
+
+Now we need to fit our logistic regression model to the dataset we have. Using the glm() function is pretty much fair game, the only thing is that I'd prefer to do is that right after we've fitted the model, I want to work with backwards selection using AIC, which we can do with the step() function.
+
+Let's fit our model first of course.
+
+```{r logistic_glm}
+library(stats)
+model.logi <- glm(Churn~.,data = train.logi, family = binomial(link = "logit"))
+summary(model.logi)
+```
+
+I'm feeling very good about the fit of our model! We'll probably go more in depth about our model in the evaluation section. While usually AIC is better understood in context of comparison to other models and isn't much help by itself, the AIC here is generally pretty low compared to previous models that I've had experience working with. My only concern to be honest is the potential moderate colinearity we noticed before when we were preparing our dataset for the model. Also notice how a large amount of our features are actually fairly significant.
+
+As per the suggestion from the textbook, encoding Age to a factor allowed our model to automatically one-hot encode Age, but there's something that I wanted to point out in terms of model fit. Our logistic regression algorithm didn't consider age to be significant.
+
+We could improve our model by backwards selection using AIC, let's implement that. I'm also curious as to whether stepwise logistic regression using AIC eliminates age or not.
+
+```{r backwards_selection}
+model.logi <- step(model.logi)
+```
+
+Here's how I understood the stepwise eliination method. For each iteration, it checks which feature shows the highest reduction in AIC score when removed. In this case the feature to be removed was tariff plan. This was pretty much expected because tariff plan didn't have a significant p-value anyways as we saw in our model summary. Though I was surprised that our model didn't remove the age parameter altogether.
+
+#### tuning wishlist
+
+There were a few things for logistic regression which I wanted to tune but ultimately could not because of time reasons. I also wanted to check what the ideal threshold would be for logistic regression to get accurate predictions but this couldn't be implemented, ideally I would loop through a list of possible thresholds for if-else, from 0.1 to 0.9 to see which value gave the most accurate predictions.
+
+For time purposes, I forgot that I could use the caret implementation which supported regularization and ridge and lasso regression as a hyperparameter.
+
+#### Testing logistic regression.
+
+We can test our algorithm to see how results are output.
+
+I'd like to wrap my logistic regression prediction function to make it a bit easier to use, so that we get 0 and 1 predictions by default.
+
+```{r logistic_wrapper}
+logi.predict <-function(model, data){
+  logi.result <- predict(model, newdata=data, type="response")
+  logi.final <- ifelse(logi.result > 0.5, 1, 0)
+  return(logi.final)
+}
+
+result.a <- logi.predict(model.logi, data = test.logi)
+
+head(result.a)
+tail(result.a)
+```
+
+### Random Forest
+
+#### Holdout: Dividing dataset
+
+Finally, we do the same data partitioning with Random Forest, I've gone over this a fair bit of times so it should be fairly straightforward.
+
+```{r partition_data.RF}
+train.rf <- dfs.rf[train.ind,]
+test.rf <- dfs.rf[test.ind,]
+```
+
+#### Fitting model
+
+Here's the deal, I want to perform some form of tuning for my implementation of random forest so we'll use the caret implementation of Random forest. Random forest differs a bit in the sense that it doesn't have many hyperparameters aside from the number of trees, which we can optimize for accuracy, let's implement tuning and create a deployable random forest model.
+
+I think that hyperparameter tuning in general could've been explored in a LOT more detail if we were to use decision trees. In fact if this project used decision trees instead of random forest, we could have worked on creating an interesting self-implemented version of random forest as a custom ensemble of decision trees. More trees would lead to higher accuracy and would reduce overfitting, but I suspect that we would get diminishing returns at some point, similar to how the k parameter works. In fact it's pretty interesting how both knn and random forest work on the idea of building consensus and calling a "vote" for classification. Let's tune the hyperparameter of mtry, this parameter specifically refers to the number of variables sampled at each split when the decision tree is being built.
+
+```{r rf_grid.implementation}
+rf.grid <- expand.grid(mtry =seq(1, 15))
+```
+
+I think that caret has much to be explored actually, in a future project for example I'd love to look further into tuning decision trees for example, because they tend to be the most "interactive" model in a sense.
+
+Next, let's set our train control. While we could use cross validation, The only thing is that I anticipate random forest to be fairly computationally expensive. I had to tweak the validation parameters because using number = 10 took a very long time. I also realized that random forest has out of the box tuning which is better than cross-validation when it comes to using computational resources.
+
+```{r rf_train.control}
+train_ctrl.rf <- trainControl(method = "oob", number = 5)
+```
+
+Finally, we can implement this into a proper model. I used an arbitrary number of trees as 100 to balance the computational time that random forest takes with accuracy. While I didn't have much time, we could have also plotted the number of trees against accuracy to further discover a trend for example.
+
+```{r caret_rf}
+rf_model <- train(Churn ~ ., 
+                  data = train.rf, 
+                  method = "rf",
+                  trControl = train_ctrl.rf,
+                  tuneGrid = rf.grid,
+                  ntree=100)
+print(rf_model)
+```
+
+We can plot the random forest model to see the optimal level of the mtry parameter.
+
+```{r}
+plot(rf_model)
+```
+
+I don't see any need to bag the random forest algorithm because it's already an ensemble model that bags several decision trees together. A better adjustment would be the number of trees instead because random forest performs bagging by default.
+
+### Building the Ensemble
+
+Finally, here we build a heterogenous ensemble prediction function here from the models that we have. Since our work can get a bit messy, I want to work in such a manner that we use a list for both our test sets and our models.
+
+```{r model_test.lists}
+classifier <- list(knn.model, model.logi, rf_model)
+
+test <- list(test.knn, test.logi, test.rf)
+```
+
+Next, using these two lists we can create an ensemble classifier for predictions. The ensemble classifier depends on each model's test set having the same number of rows, where we would cycle through each model and its respective test data set for prediction in parallel. We use an if statement to take our slightly customized logistic regression prediction function into account. 
+
+Notice something? Each dataset is tailored towards its respective model from our previous steps for the ensemble to work. To streamline this we can ask: "How can we create an ensemble pipeline that automatically tailors a single dataset for us as an input when we use the ensemble function?" 
+
+```{r Ensemble_classifier}
+ensemble_predict <- function(models, test_sets) {
+  predictions <- list()
+  
+  for (i in seq_along(models)) {
+    model <- models[[i]]
+    test_data <- test_sets[[i]]
+    
+    if ("glm" %in% class(model)) {# to test, see class(model.logi)
+      preds <- logi.predict(model, test_data)
+    } else {
+      preds <- predict(model, newdata = test_data)
+      preds <- as.numeric(as.character(preds)) # Preventing output of factors
+    }
+    predictions[[i]] <- preds
+  }
+
+  pred_df <- as.data.frame(predictions) # Easier to iterate over a dataframe
+  
+  majority_vote <- apply(pred_df, 1, function(row) {
+    as.numeric(names(sort(table(row), decreasing = TRUE)[1]))
+  }) 
+
+  return(majority_vote)
+}
+
+e.predictions <- ensemble_predict(classifier, test)
+
+head(e.predictions)
+tail(e.predictions)
+```
+
+# 5 / Evaluation
+
+Now that we have our models as required, we'll evaluate both the models and the ensemble.
+
+#### Evaluating individual models and comparison
+
+For this section, I wanted to use caret's confusion matrix function to better understand how each of my models faired. Remember, the models that we're working with are knn.model, model.logi, rf_model. I want to evaluate each model in terms of metrics like accuracy and F1-score. Let's evaluate our KNN data first.
+
+#### Evaluating KNN
+
+```{r KNN_evaluation}
+
+prediction.knn <- predict(knn.model, newdata = test.knn)
+
+confusion.knn <- confusionMatrix(prediction.knn, test.knn$Churn, positive = "1")
+
+confusion.knn$byClass
+confusion.knn$table
+```
+
+I chose to focus on the byclass metrics for each model because they specifically talk about the results that I'm most interested in. Overall the algorithm fared pretty well in terms of true positives and true negatives, this was a pleasant surprise compared to how we started in our original practicum with a fairly imbalanced model which would tend to overpredict towards the positive class.
+
+I'll try my best to further analyze the model since I'm working in a very high pressure situation right now so thinking while I'm stressed is a bit tough. While there are still a small amount of false negatives (60 cases from our table), false positives are less apparent. The model also fares fairly well in terms of other metrics such as the F1 score, precision and recall. There's still a slight bias towards the positive class but it's much less apparent than the last time we worked with a KNN model in practicum I.
+
+Of course to really better understand how this model fared, we should also compare it to the predictions from other models too.
+
+#### Evaluating logistic regression
+
+```{r logistic_evaluation}
+
+prediction.logistic <- logi.predict(model.logi,test.logi)
+
+confusion.logistic <- confusionMatrix(factor(prediction.logistic), test.logi$Churn, positive = "1")
+
+confusion.logistic$byClass
+confusion.logistic$table
+```
+
+Our logistic regression fared much less well in several metrics compared to our KNN model. This may be because the logistic regression algorithm was much harder to fit to my dataset, there were a lot of different considerations and different types of experimentation that I had to do with logistic regression. I was trying to fit a categorical feature to the algorithm for example which may not have been the best choice. 
+
+The one normalization method that could manage colinearity didn't normalize the data perfectly to the requirements of the algorithm as KNN did, and I could have adjusted hyperparameters much better.
+
+rom my experience with previous coursework in logistic regression I've found the logistic regression algorithm to be a bit harder to fit in general compared to KNN and random forest because of its assumptions which should be more deeply examined. Considering this,  logistic regression fares a bit poorly compared to KNN, by itself it still gets the job done with an F1-score of 0.86, and sensitivity, recall metrics ranging around 0.87.
+
+```{r forest_evaluation}
+
+prediction.rf <- predict(rf_model, newdata = test.rf)
+
+confusion.rf <- confusionMatrix(factor(prediction.rf), test.rf$Churn, positive = "1")
+
+confusion.rf$byClass
+confusion.rf$table
+```
+
+The random forest model performed the best of all compared to every single algorithm, this is to be expected from a bagged model such as RF of course. 
+
+The F-1 score of 0.986 is noticeably high,  decision tree-based learners have a history of performing consistently well, and the ensemble aspect of the random forest algorithm allows votes cast from other decision trees to counteract any overfitting or bias that results from other trees in the random forest ensemble. I also feel glad that I took the right call in my encoding and the resulting fit for random forest. The only thing I suspect is if it's caused by any errors I might have made.
+
+I interpret these statistics as meaning that the model consistently predicts true positives correctly without any mistakes. You still notice some bias that may cause a few mistakes in true negatives but these are surprisingly fairly low. Overall, the random forest algorithm faired much better than the other two, only KNN comes close to random forest in terms of metrics. I suspect that this is because of Random forest's bagging method. If I had bagged my KNN algorithm and logistic regression, KNN actually may have come fairly close in terms of performance, and logistic regression may have shown some improved performance. 
+
+#### Models versus the ensemble.
+
+Finally, we compare our models to the ensemble. Let's take some preliminary steps first.
+
+```{r ensemble.test_set}
+test.ensemble <- test.knn$Churn
+class(test.ensemble)
+```
+Then, we finally need to get some metrics on our ensemble
+
+```{r evaluate.ensemble}
+
+# see prediction in modelling section
+confusion.ensemble <- confusionMatrix(factor(e.predictions), test.ensemble, positive = "1")
+
+confusion.ensemble$byClass
+confusion.ensemble$table
+```
+ While other algorithms in the ensemble were helpful, logistic regression compromised the ensemble's performance overall compared to other algorithms. With an F1 score of 0.96, our Ensemble still performs fairly well thanks to KNN and random forest. Changing the weightage of the models could have also improved our ensemble. We still have a good combo of sensitivity and recall at 0.98, which shows that the model is pretty good at catching true positives. 
+ 
+ Across our models, we have a trend of random forest > ensemble model > KNN > logistic regression in terms of F-1 score.  
+
+
+# 6 / Deployment.
+
+While most parts of this Rmd have been thoroughly well documented and show a good effort at modelling, I feel like the Random Forest model given is the most useful in terms of deployment.
+
+
+I'm planning to work with this project further to make improvements on my approach and how the data is handled. here are some particular things I would like to improve: 
+
+- I want to go deeper into tuning parameters for each of my models. 
+
+-   I would like to opt for a k-fold cross validation approach
+
+-   I would like to improve how the class balance is addressed, and work with an improved version of SMOTE that samples my data better.
+
+-   I would like to improve the fit of my logistic regression algorithm towards my dataset.
+
+-   I would like to implement bagging properly for KNN and logistic regression, which would lead to a better fit overall for both algorithms and a better ensemble model overall
+
+-   I would like to improve my ensemble in such a way that it automatically applies any transformations to new data so that it can easily be fit for applications in the telecom industry.
+
+
+When deploying our model, we have to connect the predictions our model makes and its performance with the actual business DOMAIN KNOWLEDGE that we have. For example, is the revenue loss that a company might incur from False Positives (Predicting Churn where there isn't any) or False negatives (Predicting no Churn where there actually IS churn) worth using the model? That would depend on what the results from our model are used for, e.g a warning system for customer loss would tolerate false positives better, because it would still encourage outreach towards customers in general. 
+
+# 7 / References
+
+-   Iranian Churn [Dataset]. (2020). UCI Machine Learning Repository. <https://doi.org/10.24432/C5JW3Z>, <https://archive.ics.uci.edu/dataset/563/iranian+churn+dataset>
+
+-   Uzoukwu, Jeffery. “An Analysis of Iranian Telecom Churn Rate.” Medium, 29 June 2024, [https://medium.com/\@jeffchi21/an-analysis-of-iranian-telecom-churn-rate-2d8eece16bad](https://medium.com/@jeffchi21/an-analysis-of-iranian-telecom-churn-rate-2d8eece16bad){.uri}.
+
+-   RPubs - How to Handle Imbalanced Datasets. <https://rpubs.com/DeclanStockdale/799284>. Accessed 17 Apr. 2025.
+
