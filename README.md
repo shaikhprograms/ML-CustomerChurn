@@ -37,7 +37,8 @@ If it is necessary to reproduce my workflow for any reason or take a deeper look
 
 #### Roadmap
 
-I am currently under the process of improving this project, here are some changes nessecary that I am going through to make this a polished product.
+I am currently under the process of improving this project, here are some upcoming changes:
 
-- [ ] Tweak and fix bugs in my Ensemble model so it works properly.
 - [ ] Incorporate the use of "bagging" methods for KNN and logistic regression to improve overall model fit. 
+
+- [ ] Further explore tuning parameters for Logistic Regression to improve fit
