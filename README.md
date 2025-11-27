@@ -2,7 +2,7 @@
 
 ### Introduction
 
-This is an R machine learning project that I originally completed for my DA5030 Machine learning course. 
+This is an R machine learning project that I worked through to understand how classical machine learning models can be used for business intelligence. 
 
 Insights into customer behavior and their experience may be valuable for companies to understand how they can retain their customers and keep them satisfied. The project aims to predict customer churn as the target variable in the [Iranian Churn dataset](https://archive.ics.uci.edu/dataset/563/iranian+churn+dataset) by training various different metrics of customer satisfaction on 3 different classification models:
 
